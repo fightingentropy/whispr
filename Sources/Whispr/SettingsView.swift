@@ -189,18 +189,18 @@ struct SettingsView: View {
         minHeight: CGFloat
     ) -> some View {
         ZStack(alignment: .topLeading) {
+            TextEditor(text: text)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: minHeight)
+
             if text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(placeholder)
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
+                    .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .allowsHitTesting(false)
             }
-
-            TextEditor(text: text)
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: minHeight)
         }
     }
 
