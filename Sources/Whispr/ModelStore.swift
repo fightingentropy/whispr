@@ -49,6 +49,9 @@ final class ModelStore: ObservableObject {
     static func defaultSearchDirectories(fileManager: FileManager = .default) -> [URL] {
         let currentDir = URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
         let modelsFolder = currentDir.appending(path: "models", directoryHint: .isDirectory)
+        let homeDir = fileManager.homeDirectoryForCurrentUser
+        let homeWhispr = homeDir.appending(path: "whispr", directoryHint: .isDirectory)
+        let homeWhisprModels = homeWhispr.appending(path: "models", directoryHint: .isDirectory)
         let executableDir = URL(fileURLWithPath: CommandLine.arguments.first ?? currentDir.path, isDirectory: false)
             .deletingLastPathComponent()
         let executableModelsFolder = executableDir
@@ -57,11 +60,18 @@ final class ModelStore: ObservableObject {
 
         let bundledModelsFolder = Bundle.main.resourceURL?
             .appending(path: "models", directoryHint: .isDirectory)
+        let appSupportModelsFolder = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appending(path: "Whispr/Models", directoryHint: .isDirectory)
 
         var directories = [
             modelsFolder,
-            executableModelsFolder
+            executableModelsFolder,
+            homeWhisprModels,
+            homeWhispr
         ]
+        if let appSupportModelsFolder {
+            directories.append(appSupportModelsFolder)
+        }
         if let bundledModelsFolder {
             directories.append(bundledModelsFolder)
         }
