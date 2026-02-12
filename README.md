@@ -111,6 +111,22 @@ If you run via `swift run`, macOS may ask permissions for your host app (Termina
 3. Add `/Applications/Whispr.app` and enable it.
 - After that, updates should normally keep Accessibility trust as long as app identity/path stays consistent.
 
+## 4) Custom Vocabulary (Settings -> Vocabulary)
+- `Preferred terms`: canonical spellings/capitalization you want in final output.
+  - Example: `TypeScript, PostgreSQL, Next.js, GraphQL`
+- `Replacement rules`: explicit corrections in `wrong => right` format (one per line).
+  - Example:
+    - `postgress => PostgreSQL`
+    - `next js => Next.js`
+    - `type script => TypeScript`
+- Processing order:
+1. Replacement rules run first.
+2. Preferred terms run after.
+- For names, use `Replacement rules` first (best reliability for common mishears), and optionally add the final name to `Preferred terms`.
+  - Example:
+    - `erlin hoxa => Erlin Hoxha`
+    - `airlin hoxha => Erlin Hoxha`
+
 ## Model Discovery
 The app scans:
 - Current working directory
