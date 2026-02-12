@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="${APP_NAME:-Whispr}"
 BUNDLE_ID="${BUNDLE_ID:-com.erlinhoxha.whispr}"
-VERSION="${VERSION:-0.1.2}"
+VERSION="${VERSION:-0.1.3}"
 VOL_NAME="${VOL_NAME:-Whispr}"
 BUILD_CONFIG="${BUILD_CONFIG:-release}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/dist}"
