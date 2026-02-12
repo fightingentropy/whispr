@@ -70,6 +70,27 @@ BUNDLE_MODELS=0 ./scripts/build-dmg.sh
 MODEL_SOURCE_DIR=/path/to/models ./scripts/build-dmg.sh
 ```
 
+## Release + Auto-Update
+In-app update checks read GitHub Releases for this repo:
+- `https://api.github.com/repos/fightingentropy/whispr/releases/latest`
+
+The app compares that release tag (for example `v0.1.1`) against the app bundle version
+(`CFBundleShortVersionString` / `CFBundleVersion`) produced by `scripts/build-dmg.sh`.
+
+Release workflow:
+1. Bump `VERSION` in `scripts/build-dmg.sh`.
+2. Commit and push to `main`.
+3. Build a distributable:
+   - `./scripts/build-dmg.sh`
+   - If model assets make the DMG too large for GitHub release uploads, build lean:
+     `BUNDLE_MODELS=0 ./scripts/build-dmg.sh`
+4. Create a GitHub Release with tag `v<version>` (example: `v0.1.1`).
+5. Upload `dist/Whispr.dmg` as a release asset.
+
+Notes:
+- Pushing commits alone will not trigger updater results; a published GitHub Release is required.
+- GitHub release assets must be <= 2GB.
+
 ## 3) Permissions
 In app Settings, grant:
 - Microphone (capture audio)
