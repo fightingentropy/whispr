@@ -9,7 +9,13 @@ final class AppState: ObservableObject {
         case idle
         case checking
         case upToDate(currentVersion: String)
-        case updateAvailable(currentVersion: String, latestVersion: String, releaseURL: URL)
+        case updateAvailable(
+            currentVersion: String,
+            latestVersion: String,
+            releaseURL: URL,
+            downloadURL: URL?
+        )
+        case installing(currentVersion: String, latestVersion: String, message: String)
         case failed(message: String)
     }
 
@@ -124,6 +130,7 @@ final class AppState: ObservableObject {
         registerHotkey()
         refreshPermissions()
         reloadModels()
+        checkForUpdates()
     }
 
     func reloadModels() {
@@ -268,6 +275,9 @@ final class AppState: ObservableObject {
         if case .checking = updateCheckState {
             return
         }
+        if case .installing = updateCheckState {
+            return
+        }
 
         updateCheckState = .checking
 
@@ -282,7 +292,8 @@ final class AppState: ObservableObject {
                     self.updateCheckState = .updateAvailable(
                         currentVersion: currentVersion,
                         latestVersion: latestRelease.version,
-                        releaseURL: latestRelease.pageURL
+                        releaseURL: latestRelease.pageURL,
+                        downloadURL: latestRelease.dmgDownloadURL
                     )
                 } else {
                     self.updateCheckState = .upToDate(currentVersion: currentVersion)
@@ -303,8 +314,66 @@ final class AppState: ObservableObject {
     }
 
     func openLatestReleasePage() {
-        guard case let .updateAvailable(_, _, releaseURL) = updateCheckState else { return }
+        guard case let .updateAvailable(_, _, releaseURL, _) = updateCheckState else { return }
         NSWorkspace.shared.open(releaseURL)
+    }
+
+    func installAvailableUpdate() {
+        guard case let .updateAvailable(currentVersion, latestVersion, _, downloadURL) = updateCheckState else {
+            return
+        }
+
+        guard let downloadURL else {
+            updateCheckState = .failed(message: "Latest release does not include a DMG asset.")
+            return
+        }
+
+        updateCheckState = .installing(
+            currentVersion: currentVersion,
+            latestVersion: latestVersion,
+            message: "Downloading update..."
+        )
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let targetAppURL = try await Self.downloadAndInstallUpdate(
+                    from: downloadURL,
+                    appName: Self.currentAppName(),
+                    progress: { [weak self] message in
+                        await MainActor.run {
+                            self?.updateCheckState = .installing(
+                                currentVersion: currentVersion,
+                                latestVersion: latestVersion,
+                                message: message
+                            )
+                        }
+                    }
+                )
+
+                await MainActor.run {
+                    self.updateCheckState = .installing(
+                        currentVersion: currentVersion,
+                        latestVersion: latestVersion,
+                        message: "Relaunching..."
+                    )
+                }
+
+                let launched = await MainActor.run {
+                    NSWorkspace.shared.open(targetAppURL)
+                }
+                if !launched {
+                    throw UpdateInstallError.relaunchFailed
+                }
+
+                await MainActor.run {
+                    NSApplication.shared.terminate(nil)
+                }
+            } catch {
+                let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                self.updateCheckState = .failed(message: "Update failed: \(message)")
+            }
+        }
     }
 
     private func registerHotkey() {
@@ -620,15 +689,28 @@ final class AppState: ObservableObject {
     private struct LatestReleaseInfo {
         let version: String
         let pageURL: URL
+        let dmgDownloadURL: URL?
     }
 
     private struct GitHubLatestReleaseResponse: Decodable {
         let tagName: String
         let htmlURL: String
+        let assets: [GitHubReleaseAssetResponse]
 
         enum CodingKeys: String, CodingKey {
             case tagName = "tag_name"
             case htmlURL = "html_url"
+            case assets
+        }
+    }
+
+    private struct GitHubReleaseAssetResponse: Decodable {
+        let name: String
+        let browserDownloadURL: String
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case browserDownloadURL = "browser_download_url"
         }
     }
 
@@ -662,6 +744,39 @@ final class AppState: ObservableObject {
         }
     }
 
+    private enum UpdateInstallError: LocalizedError {
+        case downloadFailed(statusCode: Int)
+        case mountFailed(details: String)
+        case missingAppBundle
+        case commandFailed(executable: String, details: String)
+        case relaunchFailed
+
+        var errorDescription: String? {
+            switch self {
+            case let .downloadFailed(statusCode):
+                return "Update download failed with status \(statusCode)."
+            case let .mountFailed(details):
+                return "Could not open the installer DMG. \(details)"
+            case .missingAppBundle:
+                return "Installer DMG does not contain a macOS app bundle."
+            case let .commandFailed(executable, details):
+                let trimmed = details.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    return "Installer command failed: \(executable)."
+                }
+                return "Installer command failed: \(trimmed)"
+            case .relaunchFailed:
+                return "Update installed but failed to relaunch the app."
+            }
+        }
+    }
+
+    private struct ProcessResult {
+        let exitCode: Int32
+        let stdout: String
+        let stderr: String
+    }
+
     private static func fetchLatestReleaseInfo() async throws -> LatestReleaseInfo {
         guard let url = URL(string: "https://api.github.com/repos/fightingentropy/whispr/releases/latest") else {
             throw UpdateCheckError.invalidResponse
@@ -692,7 +807,206 @@ final class AppState: ObservableObject {
             throw UpdateCheckError.malformedRelease
         }
 
-        return LatestReleaseInfo(version: normalizedVersionLabel(rawVersion), pageURL: pageURL)
+        let dmgDownloadURL = release.assets
+            .first(where: { $0.name.lowercased().hasSuffix(".dmg") })
+            .flatMap { URL(string: $0.browserDownloadURL) }
+
+        return LatestReleaseInfo(
+            version: normalizedVersionLabel(rawVersion),
+            pageURL: pageURL,
+            dmgDownloadURL: dmgDownloadURL
+        )
+    }
+
+    private nonisolated static func currentAppName() -> String {
+        if let bundleName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String,
+           !bundleName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return bundleName
+        }
+        return "Whispr"
+    }
+
+    private nonisolated static func downloadAndInstallUpdate(
+        from downloadURL: URL,
+        appName: String,
+        progress: @escaping (String) async -> Void
+    ) async throws -> URL {
+        let fileManager = FileManager.default
+        let tempDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("WhisprUpdate-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: tempDirectory) }
+
+        await progress("Downloading update...")
+        var request = URLRequest(url: downloadURL)
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+        request.setValue("Whispr", forHTTPHeaderField: "User-Agent")
+
+        let (downloadedURL, response) = try await URLSession.shared.download(for: request)
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200..<300).contains(httpResponse.statusCode) {
+            throw UpdateInstallError.downloadFailed(statusCode: httpResponse.statusCode)
+        }
+
+        let dmgURL = tempDirectory.appendingPathComponent("Whispr-latest.dmg")
+        if fileManager.fileExists(atPath: dmgURL.path) {
+            try fileManager.removeItem(at: dmgURL)
+        }
+        try fileManager.moveItem(at: downloadedURL, to: dmgURL)
+
+        await progress("Opening installer...")
+        let mountPoint = try await attachDiskImage(at: dmgURL)
+        defer {
+            Task {
+                try? await detachDiskImage(at: mountPoint)
+            }
+        }
+
+        let sourceAppURL = try appBundleInMountedImage(mountPoint: mountPoint, appName: appName)
+        let targetURL = preferredInstallURL(appName: appName)
+
+        await progress("Installing update...")
+        try await replaceInstalledApp(sourceAppURL: sourceAppURL, targetURL: targetURL)
+
+        return targetURL
+    }
+
+    private nonisolated static func preferredInstallURL(appName: String) -> URL {
+        let currentBundleURL = Bundle.main.bundleURL.standardizedFileURL
+        if currentBundleURL.pathExtension.lowercased() == "app",
+           currentBundleURL.path.hasPrefix("/Applications/") {
+            return currentBundleURL
+        }
+        return URL(fileURLWithPath: "/Applications/\(appName).app")
+    }
+
+    private nonisolated static func appBundleInMountedImage(mountPoint: String, appName: String) throws -> URL {
+        let fileManager = FileManager.default
+        let mountURL = URL(fileURLWithPath: mountPoint, isDirectory: true)
+        let candidates = try fileManager.contentsOfDirectory(
+            at: mountURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+
+        let expectedName = "\(appName).app".lowercased()
+        if let preferred = candidates.first(where: { $0.lastPathComponent.lowercased() == expectedName }) {
+            return preferred
+        }
+        if let fallback = candidates.first(where: { $0.pathExtension.lowercased() == "app" }) {
+            return fallback
+        }
+        throw UpdateInstallError.missingAppBundle
+    }
+
+    private nonisolated static func replaceInstalledApp(sourceAppURL: URL, targetURL: URL) async throws {
+        let fileManager = FileManager.default
+        do {
+            if fileManager.fileExists(atPath: targetURL.path) {
+                try fileManager.removeItem(at: targetURL)
+            }
+            try fileManager.copyItem(at: sourceAppURL, to: targetURL)
+        } catch {
+            try await replaceInstalledAppWithPrivileges(sourceAppURL: sourceAppURL, targetURL: targetURL)
+        }
+
+        _ = try? await runCheckedProcess(
+            executable: "/usr/bin/xattr",
+            arguments: ["-dr", "com.apple.quarantine", targetURL.path]
+        )
+    }
+
+    private nonisolated static func replaceInstalledAppWithPrivileges(
+        sourceAppURL: URL,
+        targetURL: URL
+    ) async throws {
+        let sourcePath = shellEscaped(sourceAppURL.path)
+        let targetPath = shellEscaped(targetURL.path)
+        let shellCommand = """
+        /bin/rm -rf \(targetPath) && /bin/cp -R \(sourcePath) \(targetPath) && (/usr/bin/xattr -dr com.apple.quarantine \(targetPath) >/dev/null 2>&1 || true)
+        """
+        let script = "do shell script \"\(appleScriptEscaped(shellCommand))\" with administrator privileges"
+        _ = try await runCheckedProcess(executable: "/usr/bin/osascript", arguments: ["-e", script])
+    }
+
+    private nonisolated static func attachDiskImage(at dmgURL: URL) async throws -> String {
+        let result = try await runCheckedProcess(
+            executable: "/usr/bin/hdiutil",
+            arguments: ["attach", dmgURL.path, "-nobrowse", "-plist"]
+        )
+        guard let plistData = result.stdout.data(using: .utf8) else {
+            throw UpdateInstallError.mountFailed(details: "Installer mount output was empty.")
+        }
+        let plist = try PropertyListSerialization.propertyList(from: plistData, options: [], format: nil)
+        guard let root = plist as? [String: Any],
+              let entities = root["system-entities"] as? [[String: Any]],
+              let mountPoint = entities.compactMap({ $0["mount-point"] as? String }).first else {
+            throw UpdateInstallError.mountFailed(details: "Mount point not found in installer output.")
+        }
+        return mountPoint
+    }
+
+    private nonisolated static func detachDiskImage(at mountPoint: String) async throws {
+        _ = try await runCheckedProcess(
+            executable: "/usr/bin/hdiutil",
+            arguments: ["detach", mountPoint, "-force"]
+        )
+    }
+
+    private nonisolated static func runCheckedProcess(
+        executable: String,
+        arguments: [String]
+    ) async throws -> ProcessResult {
+        let result = try await runProcess(executable: executable, arguments: arguments)
+        guard result.exitCode == 0 else {
+            let details = result.stderr.isEmpty ? result.stdout : result.stderr
+            throw UpdateInstallError.commandFailed(executable: executable, details: details)
+        }
+        return result
+    }
+
+    private nonisolated static func runProcess(
+        executable: String,
+        arguments: [String]
+    ) async throws -> ProcessResult {
+        try await withCheckedThrowingContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: executable)
+            process.arguments = arguments
+
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            process.standardOutput = stdoutPipe
+            process.standardError = stderrPipe
+
+            process.terminationHandler = { terminatedProcess in
+                let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+                let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+                continuation.resume(returning: ProcessResult(
+                    exitCode: terminatedProcess.terminationStatus,
+                    stdout: stdout,
+                    stderr: stderr
+                ))
+            }
+
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    private nonisolated static func shellEscaped(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
+    }
+
+    private nonisolated static func appleScriptEscaped(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 
     private static func currentAppVersionString() -> String {

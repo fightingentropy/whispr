@@ -95,7 +95,14 @@ struct SettingsView: View {
                     Button(isCheckingForUpdates ? "Checking..." : "Check for Updates") {
                         appState.checkForUpdates()
                     }
-                    .disabled(isCheckingForUpdates)
+                    .disabled(isCheckingForUpdates || isInstallingUpdate)
+
+                    if canInstallUpdate || isInstallingUpdate {
+                        Button(isInstallingUpdate ? "Updating..." : "Update Now") {
+                            appState.installAvailableUpdate()
+                        }
+                        .disabled(isInstallingUpdate || !canInstallUpdate)
+                    }
 
                     if canOpenLatestRelease {
                         Button("Open Release") {
@@ -194,6 +201,20 @@ struct SettingsView: View {
         return false
     }
 
+    private var canInstallUpdate: Bool {
+        if case let .updateAvailable(_, _, _, downloadURL) = appState.updateCheckState {
+            return downloadURL != nil
+        }
+        return false
+    }
+
+    private var isInstallingUpdate: Bool {
+        if case .installing = appState.updateCheckState {
+            return true
+        }
+        return false
+    }
+
     private var updateStatusMessage: String {
         switch appState.updateCheckState {
         case .idle:
@@ -202,10 +223,15 @@ struct SettingsView: View {
             return "Checking for updates..."
         case let .upToDate(currentVersion):
             return "No updates available (current: v\(currentVersion))."
-        case let .updateAvailable(currentVersion, latestVersion, _):
+        case let .updateAvailable(currentVersion, latestVersion, _, downloadURL):
+            if downloadURL == nil {
+                return "Update available: v\(latestVersion) (current: v\(currentVersion)). No DMG asset found."
+            }
             return "Update available: v\(latestVersion) (current: v\(currentVersion))."
+        case let .installing(currentVersion, latestVersion, message):
+            return "\(message) (v\(currentVersion) -> v\(latestVersion))."
         case let .failed(message):
-            return "Update check failed: \(message)"
+            return message
         }
     }
 
@@ -213,7 +239,7 @@ struct SettingsView: View {
         switch appState.updateCheckState {
         case .upToDate:
             return .green
-        case .updateAvailable:
+        case .updateAvailable, .installing:
             return .orange
         case .failed:
             return .red

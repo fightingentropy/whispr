@@ -76,6 +76,8 @@ In-app update checks read GitHub Releases for this repo:
 
 The app compares that release tag (for example `v0.1.1`) against the app bundle version
 (`CFBundleShortVersionString` / `CFBundleVersion`) produced by `scripts/build-dmg.sh`.
+When an update is available and the release includes a `.dmg` asset, Settings shows
+an **Update Now** button that downloads, installs, and relaunches automatically.
 
 Release workflow:
 1. Bump `VERSION` in `scripts/build-dmg.sh`.
