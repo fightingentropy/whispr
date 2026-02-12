@@ -85,7 +85,9 @@ final class ModelStore: ObservableObject {
 
         let dedupedByPath = Dictionary(
             discovered.map { ($0.path.path, $0) },
-            uniquingKeysWith: { first, _ in first }
+            uniquingKeysWith: { first, second in
+                first.sizeBytes <= second.sizeBytes ? first : second
+            }
         )
 
         return dedupedByPath.values.sorted {
@@ -252,21 +254,17 @@ final class ModelStore: ObservableObject {
     }
 
     private func regularFiles(in directory: URL) -> [URL]? {
-        guard let enumerator = fileManager.enumerator(
+        let entries = try? fileManager.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else {
-            return nil
-        }
+            options: [.skipsHiddenFiles]
+        )
+        guard let entries else { return nil }
 
-        var files: [URL] = []
-        for case let fileURL as URL in enumerator {
-            let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey])
-            guard values?.isRegularFile == true else { continue }
-            files.append(fileURL)
+        return entries.filter { entry in
+            let values = try? entry.resourceValues(forKeys: [.isRegularFileKey])
+            return values?.isRegularFile == true
         }
-        return files
     }
 
     private func bundleSize(at directory: URL) -> Int64 {
