@@ -4,139 +4,143 @@ struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        Form {
-            Section("Dictation") {
-                Picker("Global hotkey", selection: hotkeyBinding) {
-                    ForEach(HotkeyPreset.allCases, id: \.self) { preset in
-                        Text(preset.displayName).tag(preset)
-                    }
-                }
-                .pickerStyle(.menu)
-
-                Picker("Language", selection: languageBinding) {
-                    ForEach(appState.languageOptions, id: \.self) { code in
-                        Text(languageLabel(for: code))
-                            .tag(code)
-                    }
-                }
-                .pickerStyle(.menu)
-
-                Toggle("Auto punctuation", isOn: punctuationBinding)
-            }
-
-            Section("Vocabulary") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Preferred terms (comma or newline separated)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextEditor(text: customVocabularyBinding)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 70)
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Replacement rules (`wrong => right`, one per line)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextEditor(text: replacementRulesBinding)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 90)
-                }
-            }
-
-            Section("Permissions") {
-                HStack {
-                    permissionDot(appState.microphonePermissionGranted)
-                    Text("Microphone")
-                    Spacer()
-                    Button("Request") {
-                        appState.requestMicrophonePermission()
-                    }
-                }
-
-                HStack {
-                    permissionDot(appState.accessibilityPermissionGranted)
-                    Text("Accessibility (for auto-paste)")
-                    Spacer()
-                    Button("Open Prompt") {
-                        appState.requestAccessibilityPermission()
-                    }
-                }
-            }
-
-            Section("Engine") {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Runtime binary")
-                            .font(.subheadline.weight(.semibold))
-                        Spacer()
-                        Text(engineStatusLabel)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(appState.whisperBinaryResolvedPath == nil ? .red : .green)
-                    }
-
-                    Text(engineSummaryLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-            }
-
-            Section("Models") {
-                if appState.models.isEmpty {
-                    Text("No available models were found.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Picker("Model", selection: appState.selectedModelPathBinding) {
-                        ForEach(appState.models) { model in
-                            Text("\(model.displayName) (\(model.displaySize))")
-                                .tag(Optional(model.path.path))
+        ScrollView {
+            Form {
+                Section("Dictation") {
+                    Picker("Global hotkey", selection: hotkeyBinding) {
+                        ForEach(HotkeyPreset.allCases, id: \.self) { preset in
+                            Text(preset.displayName).tag(preset)
                         }
                     }
                     .pickerStyle(.menu)
-                }
 
-                Button("Reload") {
-                    appState.reloadModels()
-                }
-            }
-
-            Section("Updates") {
-                HStack {
-                    Text("Current version")
-                    Spacer()
-                    Text(appState.currentAppVersion)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-
-                HStack(spacing: 8) {
-                    Button(isCheckingForUpdates ? "Checking..." : "Check for Updates") {
-                        appState.checkForUpdates()
-                    }
-                    .disabled(isCheckingForUpdates || isInstallingUpdate)
-
-                    if canInstallUpdate || isInstallingUpdate {
-                        Button(isInstallingUpdate ? "Updating..." : "Update Now") {
-                            appState.installAvailableUpdate()
-                        }
-                        .disabled(isInstallingUpdate || !canInstallUpdate)
-                    }
-
-                    if canOpenLatestRelease {
-                        Button("Open Release") {
-                            appState.openLatestReleasePage()
+                    Picker("Language", selection: languageBinding) {
+                        ForEach(appState.languageOptions, id: \.self) { code in
+                            Text(languageLabel(for: code))
+                                .tag(code)
                         }
                     }
+                    .pickerStyle(.menu)
+
+                    Toggle("Auto punctuation", isOn: punctuationBinding)
                 }
 
-                Text(updateStatusMessage)
-                    .font(.caption)
-                    .foregroundStyle(updateStatusColor)
-                    .lineLimit(3)
+                Section("Vocabulary") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Preferred terms (comma or newline separated)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: customVocabularyBinding)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 56)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Replacement rules (`wrong => right`, one per line)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: replacementRulesBinding)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 72)
+                    }
+                }
+
+                Section("Permissions") {
+                    HStack {
+                        permissionDot(appState.microphonePermissionGranted)
+                        Text("Microphone")
+                        Spacer()
+                        Button("Request") {
+                            appState.requestMicrophonePermission()
+                        }
+                    }
+
+                    HStack {
+                        permissionDot(appState.accessibilityPermissionGranted)
+                        Text("Accessibility (for auto-paste)")
+                        Spacer()
+                        Button("Open Prompt") {
+                            appState.requestAccessibilityPermission()
+                        }
+                    }
+                }
+
+                Section("Engine") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Runtime binary")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text(engineStatusLabel)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(appState.whisperBinaryResolvedPath == nil ? .red : .green)
+                        }
+
+                        Text(engineSummaryLabel)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+
+                Section("Models") {
+                    if appState.models.isEmpty {
+                        Text("No available models were found.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker("Model", selection: appState.selectedModelPathBinding) {
+                            ForEach(appState.models) { model in
+                                Text("\(model.displayName) (\(model.displaySize))")
+                                    .tag(Optional(model.path.path))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+
+                    Button("Reload") {
+                        appState.reloadModels()
+                    }
+                }
+
+                Section("Updates") {
+                    HStack {
+                        Text("Current version")
+                        Spacer()
+                        Text(appState.currentAppVersion)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack(spacing: 8) {
+                        Button(isCheckingForUpdates ? "Checking..." : "Check for Updates") {
+                            appState.checkForUpdates()
+                        }
+                        .disabled(isCheckingForUpdates || isInstallingUpdate)
+
+                        if canInstallUpdate || isInstallingUpdate {
+                            Button(isInstallingUpdate ? "Updating..." : "Update Now") {
+                                appState.installAvailableUpdate()
+                            }
+                            .disabled(isInstallingUpdate || !canInstallUpdate)
+                        }
+
+                        if canOpenLatestRelease {
+                            Button("Open Release") {
+                                appState.openLatestReleasePage()
+                            }
+                        }
+                    }
+
+                    Text(updateStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(updateStatusColor)
+                        .lineLimit(3)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(16)
     }
 
