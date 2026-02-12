@@ -5,6 +5,14 @@ import SwiftUI
 
 @MainActor
 final class AppState: ObservableObject {
+    enum UpdateCheckState: Equatable {
+        case idle
+        case checking
+        case upToDate(currentVersion: String)
+        case updateAvailable(currentVersion: String, latestVersion: String, releaseURL: URL)
+        case failed(message: String)
+    }
+
     @Published var status: DictationStatus = .idle
     @Published var hotkeyDisplay = "Right Command (hold)"
     @Published var selectedLanguage = "en"
@@ -16,6 +24,7 @@ final class AppState: ObservableObject {
     @Published var microphonePermissionGranted = false
     @Published var accessibilityPermissionGranted = false
     @Published var liveInputLevel: Float = 0
+    @Published private(set) var updateCheckState: UpdateCheckState = .idle
 
     @Published private(set) var modelStore: ModelStore
 
@@ -103,6 +112,10 @@ final class AppState: ObservableObject {
     var whisperBinaryResolvedPath: String? {
         guard let model = activeModel else { return nil }
         return runtimeBinaryPath(for: model)
+    }
+
+    var currentAppVersion: String {
+        Self.currentAppVersionString()
     }
 
     func bootstrapIfNeeded() {
@@ -249,6 +262,41 @@ final class AppState: ObservableObject {
         guard !latestTranscript.isEmpty else { return }
         _ = NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(latestTranscript, forType: .string)
+    }
+
+    func checkForUpdates() {
+        if case .checking = updateCheckState {
+            return
+        }
+
+        updateCheckState = .checking
+
+        Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let latestRelease = try await Self.fetchLatestReleaseInfo()
+                let currentVersion = Self.currentAppVersionString()
+
+                if Self.compareVersions(latestRelease.version, currentVersion) == .orderedDescending {
+                    self.updateCheckState = .updateAvailable(
+                        currentVersion: currentVersion,
+                        latestVersion: latestRelease.version,
+                        releaseURL: latestRelease.pageURL
+                    )
+                } else {
+                    self.updateCheckState = .upToDate(currentVersion: currentVersion)
+                }
+            } catch {
+                let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                self.updateCheckState = .failed(message: message)
+            }
+        }
+    }
+
+    func openLatestReleasePage() {
+        guard case let .updateAvailable(_, _, releaseURL) = updateCheckState else { return }
+        NSWorkspace.shared.open(releaseURL)
     }
 
     private func registerHotkey() {
@@ -559,6 +607,154 @@ final class AppState: ObservableObject {
     private static func threadBenchmarkSignature(modelPath: String, whisperBinaryPath: String, cores: Int) -> String {
         let safeCoreCount = max(1, cores)
         return "v1|\(modelPath)|\(whisperBinaryPath)|\(safeCoreCount)"
+    }
+
+    private struct LatestReleaseInfo {
+        let version: String
+        let pageURL: URL
+    }
+
+    private struct GitHubLatestReleaseResponse: Decodable {
+        let tagName: String
+        let htmlURL: String
+
+        enum CodingKeys: String, CodingKey {
+            case tagName = "tag_name"
+            case htmlURL = "html_url"
+        }
+    }
+
+    private struct GitHubAPIErrorResponse: Decodable {
+        let message: String
+    }
+
+    private enum UpdateCheckError: LocalizedError {
+        case invalidResponse
+        case apiStatus(code: Int, message: String?)
+        case malformedRelease
+        case emptyVersionTag
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidResponse:
+                return "Could not read update server response."
+            case let .apiStatus(code, message):
+                if code == 404 {
+                    return "No published releases found yet."
+                }
+                if let message, !message.isEmpty {
+                    return "Update server returned \(code): \(message)"
+                }
+                return "Update server returned status \(code)."
+            case .malformedRelease:
+                return "Latest release data is invalid."
+            case .emptyVersionTag:
+                return "Latest release is missing a version tag."
+            }
+        }
+    }
+
+    private static func fetchLatestReleaseInfo() async throws -> LatestReleaseInfo {
+        guard let url = URL(string: "https://api.github.com/repos/fightingentropy/whispr/releases/latest") else {
+            throw UpdateCheckError.invalidResponse
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("Whispr", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw UpdateCheckError.invalidResponse
+        }
+
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let apiError = try? JSONDecoder().decode(GitHubAPIErrorResponse.self, from: data)
+            throw UpdateCheckError.apiStatus(code: httpResponse.statusCode, message: apiError?.message)
+        }
+
+        let release = try JSONDecoder().decode(GitHubLatestReleaseResponse.self, from: data)
+        let rawVersion = release.tagName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawVersion.isEmpty else {
+            throw UpdateCheckError.emptyVersionTag
+        }
+
+        guard let pageURL = URL(string: release.htmlURL) else {
+            throw UpdateCheckError.malformedRelease
+        }
+
+        return LatestReleaseInfo(version: normalizedVersionLabel(rawVersion), pageURL: pageURL)
+    }
+
+    private static func currentAppVersionString() -> String {
+        let info = Bundle.main.infoDictionary
+        let shortVersion = (info?["CFBundleShortVersionString"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !shortVersion.isEmpty {
+            return normalizedVersionLabel(shortVersion)
+        }
+
+        let bundleVersion = (info?["CFBundleVersion"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !bundleVersion.isEmpty {
+            return normalizedVersionLabel(bundleVersion)
+        }
+
+        return "0.0.0"
+    }
+
+    private static func compareVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        let lhsParts = versionComponents(from: lhs)
+        let rhsParts = versionComponents(from: rhs)
+        let count = max(lhsParts.count, rhsParts.count)
+
+        for index in 0..<count {
+            let lhsValue = index < lhsParts.count ? lhsParts[index] : 0
+            let rhsValue = index < rhsParts.count ? rhsParts[index] : 0
+
+            if lhsValue < rhsValue {
+                return .orderedAscending
+            }
+            if lhsValue > rhsValue {
+                return .orderedDescending
+            }
+        }
+
+        return .orderedSame
+    }
+
+    private static func versionComponents(from raw: String) -> [Int] {
+        let cleaned = normalizedVersionLabel(raw)
+        let dotSeparated = cleaned.split(separator: ".")
+        var values: [Int] = []
+
+        for component in dotSeparated {
+            let digits = component.prefix { $0.isNumber }
+            if let value = Int(digits), !digits.isEmpty {
+                values.append(value)
+            }
+        }
+
+        if !values.isEmpty {
+            return values
+        }
+
+        let fallbackDigits = cleaned.filter { $0.isNumber }
+        if let value = Int(fallbackDigits), !fallbackDigits.isEmpty {
+            return [value]
+        }
+
+        return [0]
+    }
+
+    private static func normalizedVersionLabel(_ version: String) -> String {
+        let trimmed = version.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowercased = trimmed.lowercased()
+        if lowercased.hasPrefix("v"), trimmed.count > 1 {
+            return String(trimmed.dropFirst())
+        }
+        return trimmed
     }
 
     private static let modelPathKey = "whispr.selectedModelPath"

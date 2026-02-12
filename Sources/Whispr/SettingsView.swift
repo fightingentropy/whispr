@@ -81,6 +81,34 @@ struct SettingsView: View {
                     appState.reloadModels()
                 }
             }
+
+            Section("Updates") {
+                HStack {
+                    Text("Current version")
+                    Spacer()
+                    Text(appState.currentAppVersion)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 8) {
+                    Button(isCheckingForUpdates ? "Checking..." : "Check for Updates") {
+                        appState.checkForUpdates()
+                    }
+                    .disabled(isCheckingForUpdates)
+
+                    if canOpenLatestRelease {
+                        Button("Open Release") {
+                            appState.openLatestReleasePage()
+                        }
+                    }
+                }
+
+                Text(updateStatusMessage)
+                    .font(.caption)
+                    .foregroundStyle(updateStatusColor)
+                    .lineLimit(3)
+            }
         }
         .padding(16)
     }
@@ -150,5 +178,47 @@ struct SettingsView: View {
 
         let binaryName = URL(fileURLWithPath: resolvedPath).lastPathComponent
         return "Using runtime (\(binaryName))."
+    }
+
+    private var isCheckingForUpdates: Bool {
+        if case .checking = appState.updateCheckState {
+            return true
+        }
+        return false
+    }
+
+    private var canOpenLatestRelease: Bool {
+        if case .updateAvailable = appState.updateCheckState {
+            return true
+        }
+        return false
+    }
+
+    private var updateStatusMessage: String {
+        switch appState.updateCheckState {
+        case .idle:
+            return "Check GitHub Releases for a newer app build."
+        case .checking:
+            return "Checking for updates..."
+        case let .upToDate(currentVersion):
+            return "You're up to date (v\(currentVersion))."
+        case let .updateAvailable(currentVersion, latestVersion, _):
+            return "Update available: v\(latestVersion) (current: v\(currentVersion))."
+        case let .failed(message):
+            return "Update check failed: \(message)"
+        }
+    }
+
+    private var updateStatusColor: Color {
+        switch appState.updateCheckState {
+        case .upToDate:
+            return .green
+        case .updateAvailable:
+            return .orange
+        case .failed:
+            return .red
+        case .idle, .checking:
+            return .secondary
+        }
     }
 }
