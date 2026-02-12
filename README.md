@@ -103,6 +103,14 @@ In app Settings, grant:
 
 If you run via `swift run`, macOS may ask permissions for your host app (Terminal/Cursor) instead of a standalone `Whispr` app bundle.
 
+### Accessibility trust across updates
+- Starting with `v0.1.6`, release packaging signs the app with a stable designated requirement (`com.erlinhoxha.whispr`) to reduce Accessibility permission resets after updates.
+- If you previously had to re-add Whispr on every update, do a one-time reset:
+1. System Settings -> Privacy & Security -> Accessibility.
+2. Remove old `Whispr` entries.
+3. Add `/Applications/Whispr.app` and enable it.
+- After that, updates should normally keep Accessibility trust as long as app identity/path stays consistent.
+
 ## Model Discovery
 The app scans:
 - Current working directory
