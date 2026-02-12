@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+dist/
+models/
+tools/
+whisper.cpp/
+assets/AppIcon.icns
+assets/AppIcon.iconset/
+*.dmg
+*.xcuserstate
