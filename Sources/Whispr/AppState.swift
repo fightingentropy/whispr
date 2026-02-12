@@ -23,6 +23,8 @@ final class AppState: ObservableObject {
     @Published var hotkeyDisplay = "Right Command (hold)"
     @Published var selectedLanguage = "en"
     @Published var autoPunctuation = true
+    @Published var customVocabularyText = ""
+    @Published var replacementRulesText = ""
     @Published var transcriptionThreads = 4
     @Published var latestTranscript = ""
     @Published var lastError: String?
@@ -62,6 +64,8 @@ final class AppState: ObservableObject {
         self.whisperCLIPath = persistedCLIPath
         self.selectedLanguage = defaults.string(forKey: Self.languageKey) ?? "en"
         self.autoPunctuation = defaults.object(forKey: Self.autoPunctuationKey) as? Bool ?? true
+        self.customVocabularyText = defaults.string(forKey: Self.customVocabularyKey) ?? ""
+        self.replacementRulesText = defaults.string(forKey: Self.replacementRulesKey) ?? ""
         self.transcriptionThreads = persistedThreads
 
         if let persistedModelPath = defaults.string(forKey: Self.modelPathKey) {
@@ -230,6 +234,16 @@ final class AppState: ObservableObject {
     func setAutoPunctuation(_ enabled: Bool) {
         autoPunctuation = enabled
         defaults.set(enabled, forKey: Self.autoPunctuationKey)
+    }
+
+    func setCustomVocabularyText(_ text: String) {
+        customVocabularyText = text
+        defaults.set(text, forKey: Self.customVocabularyKey)
+    }
+
+    func setReplacementRulesText(_ text: String) {
+        replacementRulesText = text
+        defaults.set(text, forKey: Self.replacementRulesKey)
     }
 
     func setTranscriptionThreads(_ threads: Int) {
@@ -494,10 +508,11 @@ final class AppState: ObservableObject {
                     )
                 }
 
-                latestTranscript = transcript
+                let correctedTranscript = applyCustomVocabulary(to: transcript)
+                latestTranscript = correctedTranscript
 
                 do {
-                    try textInjector.insert(text: transcript)
+                    try textInjector.insert(text: correctedTranscript)
                     status = .idle
                     liveInputLevel = 0
                     scheduleAutomaticThreadBenchmarkIfNeeded()
@@ -684,6 +699,52 @@ final class AppState: ObservableObject {
     private static func threadBenchmarkSignature(modelPath: String, whisperBinaryPath: String, cores: Int) -> String {
         let safeCoreCount = max(1, cores)
         return "v1|\(modelPath)|\(whisperBinaryPath)|\(safeCoreCount)"
+    }
+
+    private func applyCustomVocabulary(to transcript: String) -> String {
+        var updated = transcript
+        let rules = parsedReplacementRules(from: replacementRulesText)
+        for rule in rules {
+            updated = replacingWholePhrase(in: updated, from: rule.wrong, to: rule.right)
+        }
+
+        let vocabularyTerms = parsedVocabularyTerms(from: customVocabularyText)
+        for term in vocabularyTerms {
+            updated = replacingWholePhrase(in: updated, from: term.lowercased(), to: term)
+        }
+
+        return updated
+    }
+
+    private func parsedVocabularyTerms(from raw: String) -> [String] {
+        raw.components(separatedBy: .newlines)
+            .flatMap { $0.split(separator: ",").map(String.init) }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func parsedReplacementRules(from raw: String) -> [(wrong: String, right: String)] {
+        raw.components(separatedBy: .newlines).compactMap { line in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            guard let delimiterRange = trimmed.range(of: "=>") else { return nil }
+            let wrong = trimmed[..<delimiterRange.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+            let right = trimmed[delimiterRange.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !wrong.isEmpty, !right.isEmpty else { return nil }
+            return (wrong: String(wrong), right: String(right))
+        }
+    }
+
+    private func replacingWholePhrase(in text: String, from source: String, to replacement: String) -> String {
+        guard !source.isEmpty else { return text }
+        let escapedSource = NSRegularExpression.escapedPattern(for: source)
+        let pattern = "(?i)(?<![A-Za-z0-9_])\(escapedSource)(?![A-Za-z0-9_])"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        let literalReplacement = replacement
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "$", with: "\\$")
+        return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: literalReplacement)
     }
 
     private struct LatestReleaseInfo {
@@ -1083,6 +1144,8 @@ final class AppState: ObservableObject {
     private static let whisperCLIPathKey = "whispr.whisperCLIPathOverride"
     private static let languageKey = "whispr.language"
     private static let autoPunctuationKey = "whispr.autoPunctuation"
+    private static let customVocabularyKey = "whispr.customVocabulary"
+    private static let replacementRulesKey = "whispr.replacementRules"
     private static let transcriptionThreadsKey = "whispr.transcriptionThreads"
     private static let threadBenchmarkSignatureKey = "whispr.threadBenchmarkSignature"
     private static let hotkeyPresetKey = "whispr.hotkeyPreset"

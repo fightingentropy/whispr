@@ -24,6 +24,26 @@ struct SettingsView: View {
                 Toggle("Auto punctuation", isOn: punctuationBinding)
             }
 
+            Section("Vocabulary") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Preferred terms (comma or newline separated)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: customVocabularyBinding)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 70)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Replacement rules (`wrong => right`, one per line)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextEditor(text: replacementRulesBinding)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 90)
+                }
+            }
+
             Section("Permissions") {
                 HStack {
                     permissionDot(appState.microphonePermissionGranted)
@@ -138,6 +158,20 @@ struct SettingsView: View {
         Binding(
             get: { appState.autoPunctuation },
             set: { appState.setAutoPunctuation($0) }
+        )
+    }
+
+    private var customVocabularyBinding: Binding<String> {
+        Binding(
+            get: { appState.customVocabularyText },
+            set: { appState.setCustomVocabularyText($0) }
+        )
+    }
+
+    private var replacementRulesBinding: Binding<String> {
+        Binding(
+            get: { appState.replacementRulesText },
+            set: { appState.setReplacementRulesText($0) }
         )
     }
 
