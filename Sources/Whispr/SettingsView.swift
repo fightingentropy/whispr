@@ -201,7 +201,7 @@ struct SettingsView: View {
         case .checking:
             return "Checking for updates..."
         case let .upToDate(currentVersion):
-            return "You're up to date (v\(currentVersion))."
+            return "No updates available (current: v\(currentVersion))."
         case let .updateAvailable(currentVersion, latestVersion, _):
             return "Update available: v\(latestVersion) (current: v\(currentVersion))."
         case let .failed(message):

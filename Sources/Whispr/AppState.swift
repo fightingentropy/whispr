@@ -287,6 +287,14 @@ final class AppState: ObservableObject {
                 } else {
                     self.updateCheckState = .upToDate(currentVersion: currentVersion)
                 }
+            } catch let updateError as UpdateCheckError {
+                let currentVersion = Self.currentAppVersionString()
+                switch updateError {
+                case .apiStatus(code: 404, message: _):
+                    self.updateCheckState = .upToDate(currentVersion: currentVersion)
+                default:
+                    self.updateCheckState = .failed(message: updateError.localizedDescription)
+                }
             } catch {
                 let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                 self.updateCheckState = .failed(message: message)
