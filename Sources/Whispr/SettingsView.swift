@@ -30,20 +30,26 @@ struct SettingsView: View {
                         Text("Preferred terms (comma or newline separated)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        TextEditor(text: customVocabularyBinding)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(minHeight: 56)
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Replacement rules (`wrong => right`, one per line)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        TextEditor(text: replacementRulesBinding)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(minHeight: 72)
-                    }
+                    TextEditor(text: customVocabularyBinding)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 56)
+                    Text("Examples: TypeScript, PostgreSQL, Next.js, GraphQL")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Replacement rules (`wrong => right`, one per line)")
+                        .font(.caption)
+                            .foregroundStyle(.secondary)
+                    TextEditor(text: replacementRulesBinding)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 72)
+                    Text("Examples:\npostgress => PostgreSQL\nnext js => Next.js\ntype script => TypeScript")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
                 Section("Permissions") {
                     HStack {
