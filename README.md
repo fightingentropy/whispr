@@ -68,6 +68,9 @@ BUNDLE_MODELS=0 ./scripts/build-dmg.sh
 
 # Bundle models from a custom folder
 MODEL_SOURCE_DIR=/path/to/models ./scripts/build-dmg.sh
+
+# Use a specific signing identity (recommended for stable Accessibility trust across updates)
+CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./scripts/build-dmg.sh
 ```
 
 ## Release + Auto-Update

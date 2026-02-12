@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="${APP_NAME:-Whispr}"
 BUNDLE_ID="${BUNDLE_ID:-com.erlinhoxha.whispr}"
-VERSION="${VERSION:-0.1.5}"
+VERSION="${VERSION:-0.1.6}"
 VOL_NAME="${VOL_NAME:-Whispr}"
 BUILD_CONFIG="${BUILD_CONFIG:-release}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/dist}"
@@ -12,6 +12,8 @@ LOGO_PATH="${LOGO_PATH:-$ROOT_DIR/assets/logo.png}"
 ICON_PATH="${ICON_PATH:-$ROOT_DIR/assets/AppIcon.icns}"
 MODEL_SOURCE_DIR="${MODEL_SOURCE_DIR:-$ROOT_DIR/models}"
 BUNDLE_MODELS="${BUNDLE_MODELS:-1}"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
+CODESIGN_REQUIREMENTS="${CODESIGN_REQUIREMENTS:-}"
 
 mkdir -p "$OUT_DIR"
 
@@ -114,7 +116,27 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 PLIST
 
 if command -v codesign >/dev/null 2>&1; then
-  codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null
+  # Preserve nested runtime signatures first; then sign the app bundle itself.
+  while IFS= read -r -d '' nested_binary; do
+    codesign --force --sign "$CODESIGN_IDENTITY" "$nested_binary" >/dev/null
+  done < <(find "$MACOS_DIR" -type f ! -name "$APP_NAME" -print0)
+
+  # For ad-hoc signing, use a stable designated requirement to reduce TCC churn
+  # (Accessibility entries) between app updates.
+  if [[ "$CODESIGN_IDENTITY" == "-" && -z "$CODESIGN_REQUIREMENTS" ]]; then
+    CODESIGN_REQUIREMENTS="designated => identifier \"$BUNDLE_ID\""
+  fi
+
+  if [[ -n "$CODESIGN_REQUIREMENTS" ]]; then
+    codesign --force --sign "$CODESIGN_IDENTITY" --requirements "=$CODESIGN_REQUIREMENTS" "$APP_BUNDLE" >/dev/null
+  else
+    codesign --force --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE" >/dev/null
+  fi
+
+  codesign --verify --deep --strict "$APP_BUNDLE" >/dev/null
+  echo "Signed app bundle with identity: $CODESIGN_IDENTITY"
+else
+  echo "Warning: codesign not found; app will be unsigned." >&2
 fi
 
 STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/whispr-dmg-stage.XXXXXX")"
