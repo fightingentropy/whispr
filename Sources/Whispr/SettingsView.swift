@@ -30,26 +30,24 @@ struct SettingsView: View {
                         Text("Preferred terms (comma or newline separated)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                    TextEditor(text: customVocabularyBinding)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 56)
-                    Text("Examples: TypeScript, PostgreSQL, Next.js, GraphQL")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                        placeholderTextEditor(
+                            text: customVocabularyBinding,
+                            placeholder: "TypeScript, PostgreSQL, Next.js, GraphQL",
+                            minHeight: 56
+                        )
+                    }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Replacement rules (`wrong => right`, one per line)")
-                        .font(.caption)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Replacement rules (`wrong => right`, one per line)")
+                            .font(.caption)
                             .foregroundStyle(.secondary)
-                    TextEditor(text: replacementRulesBinding)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 72)
-                    Text("Examples:\npostgress => PostgreSQL\nnext js => Next.js\ntype script => TypeScript")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        placeholderTextEditor(
+                            text: replacementRulesBinding,
+                            placeholder: "postgress => PostgreSQL\nnext js => Next.js\ntype script => TypeScript",
+                            minHeight: 72
+                        )
+                    }
                 }
-            }
 
                 Section("Permissions") {
                     HStack {
@@ -183,6 +181,27 @@ struct SettingsView: View {
             get: { appState.replacementRulesText },
             set: { appState.setReplacementRulesText($0) }
         )
+    }
+
+    private func placeholderTextEditor(
+        text: Binding<String>,
+        placeholder: String,
+        minHeight: CGFloat
+    ) -> some View {
+        ZStack(alignment: .topLeading) {
+            if text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(placeholder)
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 8)
+                    .allowsHitTesting(false)
+            }
+
+            TextEditor(text: text)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: minHeight)
+        }
     }
 
     private func permissionDot(_ granted: Bool) -> some View {
