@@ -5,7 +5,7 @@ struct MenuBarView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             header
 
             if appState.whisperBinaryResolvedPath == nil {
@@ -26,7 +26,7 @@ struct MenuBarView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .controlSize(.regular)
             .disabled(appState.status == .transcribing)
 
             Button {
@@ -36,6 +36,7 @@ struct MenuBarView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+            .controlSize(.regular)
 
             if !appState.latestTranscript.isEmpty {
                 Divider()
@@ -69,25 +70,26 @@ struct MenuBarView: View {
                 .buttonStyle(.bordered)
             }
         }
-        .padding(14)
-        .frame(width: 320)
+        .padding(12)
+        .frame(width: 280)
         .onAppear {
             appState.bootstrapIfNeeded()
         }
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: appState.status.systemImage)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(statusColor)
+        HStack(spacing: 8) {
+            Text("Whispr")
+                .font(.headline.weight(.semibold))
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Whispr")
-                    .font(.headline.weight(.semibold))
+            if appState.status != .idle {
                 Text(appState.status.label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(statusColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(statusColor.opacity(0.18))
+                    .clipShape(Capsule())
             }
 
             Spacer()
